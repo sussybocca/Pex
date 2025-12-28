@@ -48,28 +48,37 @@
   <script type="module">
     import * as THREE from 'three';
     import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+    import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias:true });
     const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x202020);
+
+    const camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 1000);
+    camera.position.set(0, 2, 5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.appendChild(renderer.domElement);
 
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(0, 50, 50);
-    scene.add(light);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
 
-    camera.position.z = 5;
+    // Light
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(10, 20, 10);
+    scene.add(light);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambient);
 
     const loader = new FBXLoader();
 
-    // Arrays to track all loaded assets/scripts
+    // Track unlimited assets/scripts
     const fbxAssets = [];
     const textures = [];
     const scripts = [];
 
-    // --- Helper to add item to sidebar ---
+    // --- Helpers ---
     function addListItem(listId, name) {
       const list = document.getElementById(listId);
       const item = document.createElement('div');
@@ -78,88 +87,90 @@
       list.appendChild(item);
     }
 
-    // --- Load FBX into scene ---
+    async function loadScript(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const mod = await import(url);
+        if(mod.default) mod.default(scene);
+        scripts.push(file);
+        addListItem('script-list', file.name);
+      } catch(err) {
+        console.error('Failed to load script:', file.name, err);
+      }
+    }
+
     function loadFBX(file) {
       const url = URL.createObjectURL(file);
       loader.load(url, obj => {
         scene.add(obj);
-        fbxAssets.push({ file, obj });
+        fbxAssets.push({file, obj});
         addListItem('asset-list', file.name);
       });
     }
 
-    // --- Handle FBX upload ---
-    document.getElementById('fbxInput').addEventListener('change', (e) => {
+    function loadTexture(file) {
+      textures.push(file);
+      addListItem('asset-list', file.name);
+    }
+
+    // --- Event Listeners ---
+    document.getElementById('fbxInput').addEventListener('change', e => {
       for(const file of e.target.files) loadFBX(file);
     });
 
-    // --- Handle textures ---
-    document.getElementById('textureInput').addEventListener('change', (e) => {
-      for(const file of e.target.files) {
-        textures.push(file);
-        addListItem('asset-list', file.name);
-      }
+    document.getElementById('textureInput').addEventListener('change', e => {
+      for(const file of e.target.files) loadTexture(file);
     });
 
-    // --- Handle scripts ---
-    document.getElementById('scriptInput').addEventListener('change', async (e) => {
-      for(const file of e.target.files) {
-        scripts.push(file);
-        addListItem('script-list', file.name);
-
-        const blobURL = URL.createObjectURL(file);
-        try {
-          const mod = await import(blobURL);
-          if(mod.default) mod.default(scene);
-        } catch(err) {
-          console.error('Failed to load script:', file.name, err);
-        }
-      }
+    document.getElementById('scriptInput').addEventListener('change', e => {
+      for(const file of e.target.files) loadScript(file);
     });
 
-    // --- Import .PeX ---
     const pexInput = document.getElementById('pexInput');
     document.getElementById('importPexBtn').addEventListener('click', () => pexInput.click());
-    pexInput.addEventListener('change', async (e) => {
+
+    pexInput.addEventListener('change', async e => {
       const file = e.target.files[0];
       const form = new FormData();
       form.append('pexFile', file);
       try {
-        const resp = await fetch('/api/importPex', { method:'POST', body:form });
+        const resp = await fetch('/api/importPex', { method:'POST', body: form });
         const data = await resp.json();
         if(data.success && data.world) {
-          // Load assets from imported world
-          for(const asset of data.world.assets) addListItem('asset-list', asset);
-          for(const script of data.world.scripts) addListItem('script-list', script);
-          console.log('Imported .PeX:', data.world);
+          // TODO: dynamically load assets/scripts from world
+          console.log('Imported world:', data.world);
         }
-      } catch(err) { console.error('Failed to import .PeX', err); }
+      } catch(err) {
+        console.error('Failed to import .PeX', err);
+      }
     });
 
-    // --- Export .PeX ---
     document.getElementById('exportPexBtn').addEventListener('click', async () => {
       const form = new FormData();
       form.append('worldFolderPath', '.');
       form.append('worldName', 'MyWorld');
       try {
-        const resp = await fetch('/api/exportPex', { method:'POST', body:form });
+        const resp = await fetch('/api/exportPex', { method:'POST', body: form });
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
         a.download = 'MyWorld.PeX';
         a.click();
-      } catch(err) { console.error('Failed to export .PeX', err); }
+      } catch(err) {
+        console.error('Failed to export .PeX', err);
+      }
     });
 
-    // --- Render loop ---
+    // --- Render Loop ---
     function animate() {
       requestAnimationFrame(animate);
+      controls.update();
       renderer.render(scene, camera);
     }
     animate();
 
-    // --- Handle resize ---
+    // --- Handle Resize ---
     window.addEventListener('resize', () => {
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
