@@ -22,8 +22,9 @@
     #sidebar input[type="file"] { width: 100%; margin-bottom: 10px; }
     #sidebar button { width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer; }
     #canvas-container { position: absolute; left: 300px; top: 0; right: 0; bottom: 0; background:#000; }
-    #asset-list, #script-list { margin-bottom: 20px; }
+    #asset-list, #script-list, #error-list { margin-bottom: 20px; max-height: 150px; overflow-y: auto; }
     .list-item { padding: 4px 0; border-bottom: 1px solid #333; font-size: 14px; cursor:pointer; }
+    .error-item { color: #f55; font-size: 13px; border-bottom: 1px solid #500; padding: 3px 0; }
   </style>
 </head>
 <body>
@@ -41,6 +42,9 @@
     <button id="importPexBtn">Import .PeX</button>
     <input type="file" id="pexInput" accept=".PeX" style="display:none;">
     <button id="exportPexBtn">Export .PeX</button>
+
+    <h2>Errors</h2>
+    <div id="error-list"></div>
   </div>
 
   <div id="canvas-container"></div>
@@ -64,12 +68,10 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Lights
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(10, 20, 10);
     scene.add(light);
-    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambient);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 
     const loader = new FBXLoader();
 
@@ -89,48 +91,76 @@
       list.appendChild(item);
     }
 
+    function addError(message) {
+      const list = document.getElementById('error-list');
+      const item = document.createElement('div');
+      item.className = 'error-item';
+      item.textContent = message;
+      list.appendChild(item);
+    }
+
     function loadFBX(file) {
       const url = URL.createObjectURL(file);
       loader.load(url,
-        (obj) => {
+        obj => {
           scene.add(obj);
           sceneAssets.models.push({ file, obj });
           addListItem('asset-list', file.name);
         },
-        undefined,
-        (err) => console.error('FBX load error:', file.name, err)
+        xhr => {},
+        err => {
+          console.error('FBX load error:', file.name, err);
+          addError(`FBX load error: ${file.name}`);
+        }
       );
     }
 
     function loadTexture(file) {
-      const url = URL.createObjectURL(file);
-      sceneAssets.textures.push({ file, url });
-      addListItem('asset-list', file.name);
+      try {
+        const url = URL.createObjectURL(file);
+        sceneAssets.textures.push({ file, url });
+        addListItem('asset-list', file.name);
+      } catch(err) {
+        console.error('Texture load error:', file.name, err);
+        addError(`Texture load error: ${file.name}`);
+      }
     }
 
     async function loadScript(file) {
-      const url = URL.createObjectURL(file);
       try {
+        const url = URL.createObjectURL(file);
         const mod = await import(url);
         if(mod.default) mod.default(scene);
         sceneAssets.scripts.push(file);
         addListItem('script-list', file.name);
       } catch(err) {
         console.error('Script load error:', file.name, err);
+        addError(`Script load error: ${file.name}`);
       }
     }
 
     // --- Event Listeners ---
-    document.getElementById('fbxInput').addEventListener('change', e => {
-      for(const file of e.target.files) loadFBX(file);
-    });
+    function handleFiles(input, loaderFunc) {
+      const files = Array.from(input.files);
+      files.forEach(loaderFunc);
+      input.value = ''; // Allow selecting the same files again
+    }
 
-    document.getElementById('textureInput').addEventListener('change', e => {
-      for(const file of e.target.files) loadTexture(file);
-    });
+    document.getElementById('fbxInput').addEventListener('change', e => handleFiles(e.target, loadFBX));
+    document.getElementById('textureInput').addEventListener('change', e => handleFiles(e.target, loadTexture));
+    document.getElementById('scriptInput').addEventListener('change', e => handleFiles(e.target, loadScript));
 
-    document.getElementById('scriptInput').addEventListener('change', e => {
-      for(const file of e.target.files) loadScript(file);
+    // --- Drag & Drop support for unlimited files ---
+    container.addEventListener('dragover', e => e.preventDefault());
+    container.addEventListener('drop', e => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer.files);
+      files.forEach(file => {
+        if(file.name.endsWith('.fbx')) loadFBX(file);
+        else if(file.name.endsWith('.png')) loadTexture(file);
+        else if(file.name.endsWith('.js')) loadScript(file);
+        else addError(`Unsupported file type: ${file.name}`);
+      });
     });
 
     // --- Pex Import/Export ---
@@ -145,9 +175,12 @@
         const data = await resp.json();
         if(data.success && data.world) {
           console.log('Imported world:', data.world);
-          // TODO: dynamically load all assets/scripts from world.json
+          addListItem('asset-list', `Imported: ${file.name}`);
         }
-      } catch(err) { console.error('Failed to import .PeX', err); }
+      } catch(err) { 
+        console.error('Failed to import .PeX', err); 
+        addError(`Failed to import .PeX: ${file.name}`);
+      }
     });
 
     document.getElementById('exportPexBtn').addEventListener('click', async () => {
@@ -162,7 +195,10 @@
         a.href = url;
         a.download = 'MyWorld.PeX';
         a.click();
-      } catch(err) { console.error('Failed to export .PeX', err); }
+      } catch(err) {
+        console.error('Failed to export .PeX', err);
+        addError('Failed to export .PeX');
+      }
     });
 
     // --- Render Loop ---
@@ -179,18 +215,6 @@
       camera.updateProjectionMatrix();
       renderer.setSize(container.clientWidth, container.clientHeight);
     });
-
-    // --- Drag & Drop support for unlimited files ---
-    container.addEventListener('dragover', e => e.preventDefault());
-    container.addEventListener('drop', e => {
-      e.preventDefault();
-      for(const file of e.dataTransfer.files) {
-        if(file.name.endsWith('.fbx')) loadFBX(file);
-        else if(file.name.endsWith('.png')) loadTexture(file);
-        else if(file.name.endsWith('.js')) loadScript(file);
-      }
-    });
-
   </script>
 </body>
 </html>
