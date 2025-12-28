@@ -64,7 +64,7 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Light
+    // Lights
     const light = new THREE.DirectionalLight(0xffffff, 1);
     light.position.set(10, 20, 10);
     scene.add(light);
@@ -73,10 +73,12 @@
 
     const loader = new FBXLoader();
 
-    // Track unlimited assets/scripts
-    const fbxAssets = [];
-    const textures = [];
-    const scripts = [];
+    // --- Scene Registry ---
+    const sceneAssets = {
+      models: [],
+      textures: [],
+      scripts: []
+    };
 
     // --- Helpers ---
     function addListItem(listId, name) {
@@ -87,30 +89,35 @@
       list.appendChild(item);
     }
 
+    function loadFBX(file) {
+      const url = URL.createObjectURL(file);
+      loader.load(url,
+        (obj) => {
+          scene.add(obj);
+          sceneAssets.models.push({ file, obj });
+          addListItem('asset-list', file.name);
+        },
+        undefined,
+        (err) => console.error('FBX load error:', file.name, err)
+      );
+    }
+
+    function loadTexture(file) {
+      const url = URL.createObjectURL(file);
+      sceneAssets.textures.push({ file, url });
+      addListItem('asset-list', file.name);
+    }
+
     async function loadScript(file) {
       const url = URL.createObjectURL(file);
       try {
         const mod = await import(url);
         if(mod.default) mod.default(scene);
-        scripts.push(file);
+        sceneAssets.scripts.push(file);
         addListItem('script-list', file.name);
       } catch(err) {
-        console.error('Failed to load script:', file.name, err);
+        console.error('Script load error:', file.name, err);
       }
-    }
-
-    function loadFBX(file) {
-      const url = URL.createObjectURL(file);
-      loader.load(url, obj => {
-        scene.add(obj);
-        fbxAssets.push({file, obj});
-        addListItem('asset-list', file.name);
-      });
-    }
-
-    function loadTexture(file) {
-      textures.push(file);
-      addListItem('asset-list', file.name);
     }
 
     // --- Event Listeners ---
@@ -126,9 +133,9 @@
       for(const file of e.target.files) loadScript(file);
     });
 
+    // --- Pex Import/Export ---
     const pexInput = document.getElementById('pexInput');
     document.getElementById('importPexBtn').addEventListener('click', () => pexInput.click());
-
     pexInput.addEventListener('change', async e => {
       const file = e.target.files[0];
       const form = new FormData();
@@ -137,12 +144,10 @@
         const resp = await fetch('/api/importPex', { method:'POST', body: form });
         const data = await resp.json();
         if(data.success && data.world) {
-          // TODO: dynamically load assets/scripts from world
           console.log('Imported world:', data.world);
+          // TODO: dynamically load all assets/scripts from world.json
         }
-      } catch(err) {
-        console.error('Failed to import .PeX', err);
-      }
+      } catch(err) { console.error('Failed to import .PeX', err); }
     });
 
     document.getElementById('exportPexBtn').addEventListener('click', async () => {
@@ -157,9 +162,7 @@
         a.href = url;
         a.download = 'MyWorld.PeX';
         a.click();
-      } catch(err) {
-        console.error('Failed to export .PeX', err);
-      }
+      } catch(err) { console.error('Failed to export .PeX', err); }
     });
 
     // --- Render Loop ---
@@ -170,12 +173,24 @@
     }
     animate();
 
-    // --- Handle Resize ---
+    // --- Resize ---
     window.addEventListener('resize', () => {
       camera.aspect = container.clientWidth / container.clientHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(container.clientWidth, container.clientHeight);
     });
+
+    // --- Drag & Drop support for unlimited files ---
+    container.addEventListener('dragover', e => e.preventDefault());
+    container.addEventListener('drop', e => {
+      e.preventDefault();
+      for(const file of e.dataTransfer.files) {
+        if(file.name.endsWith('.fbx')) loadFBX(file);
+        else if(file.name.endsWith('.png')) loadTexture(file);
+        else if(file.name.endsWith('.js')) loadScript(file);
+      }
+    });
+
   </script>
 </body>
 </html>
