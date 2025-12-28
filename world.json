@@ -1,0 +1,12 @@
+{
+  "name": "MyWorld",
+  "assets": [
+    "assets/models/example.fbx"
+  ],
+  "textures": [
+    "assets/textures/example.png"
+  ],
+  "scripts": [
+    "scripts/exampleMod.js"
+  ]
+}

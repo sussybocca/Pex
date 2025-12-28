@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pex Viewer</title>
+  <link rel="icon" href="/favicon.ico">
+  <style>
+    body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background: #000; }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #loading {
+      position: absolute;
+      top: 10px; left: 10px;
+      color: #fff;
+      font-size: 16px;
+      background: rgba(0,0,0,0.5);
+      padding: 6px 10px;
+      border-radius: 4px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="loading">Loading world...</div>
+
+  <script type="module">
+    import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+    import { FBXLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/FBXLoader.js";
+
+    const container = document.getElementById("canvas-container");
+    const loadingEl = document.getElementById("loading");
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    container.appendChild(renderer.domElement);
+
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 50, 50);
+    scene.add(light);
+
+    const loader = new FBXLoader();
+
+    // Get the world path from the URL
+    const pathSegments = window.location.pathname.split("/").filter(Boolean); 
+    // e.g., ["P","Y","W","S"]
+    const worldPath = pathSegments.join("/");
+
+    async function loadWorld() {
+      try {
+        const resp = await fetch(`/${worldPath}/world.json`);
+        const world = await resp.json();
+
+        // Load assets
+        for(const asset of world.assets) {
+          loader.load(`/${worldPath}/${asset}`, obj => scene.add(obj));
+        }
+
+        // Load textures (optional, can be applied in scripts)
+        // Load scripts dynamically
+        for(const script of world.scripts) {
+          const mod = await import(`/${worldPath}/${script}`);
+          if(mod.default) mod.default(scene);
+        }
+
+        loadingEl.style.display = "none";
+      } catch(e) {
+        loadingEl.textContent = "Failed to load world: " + e.message;
+      }
+    }
+
+    camera.position.z = 5;
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+    }
+
+    await loadWorld();
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

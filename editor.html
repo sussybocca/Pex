@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Pex Editor</title>
+  <link rel="icon" href="/favicon.ico">
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; overflow: hidden; }
+    #sidebar {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 250px;
+      height: 100%;
+      background: #1e1e1e;
+      color: #fff;
+      padding: 10px;
+      box-sizing: border-box;
+      overflow-y: auto;
+    }
+    #sidebar h2 { margin-top: 0; font-size: 18px; }
+    #sidebar input[type="file"] { width: 100%; margin-bottom: 10px; }
+    #sidebar button { width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer; }
+    #canvas-container { position: absolute; left: 250px; top: 0; right: 0; bottom: 0; }
+    #asset-list, #script-list { margin-bottom: 20px; }
+    .list-item { padding: 4px 0; border-bottom: 1px solid #333; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="sidebar">
+    <h2>Assets</h2>
+    <div id="asset-list"></div>
+    <input type="file" id="fbxInput" accept=".fbx" multiple>
+    <input type="file" id="textureInput" accept=".png" multiple>
+
+    <h2>Scripts</h2>
+    <div id="script-list"></div>
+    <input type="file" id="scriptInput" accept=".js" multiple>
+
+    <h2>Actions</h2>
+    <button id="importPexBtn">Import .PeX</button>
+    <input type="file" id="pexInput" accept=".PeX" style="display:none;">
+    <button id="exportPexBtn">Export .PeX</button>
+  </div>
+
+  <div id="canvas-container"></div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
