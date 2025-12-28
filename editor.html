@@ -6,18 +6,7 @@
   <link rel="icon" href="/favicon.ico">
   <style>
     body { margin: 0; font-family: Arial, sans-serif; overflow: hidden; }
-    #sidebar {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 300px;
-      height: 100%;
-      background: #1e1e1e;
-      color: #fff;
-      padding: 10px;
-      box-sizing: border-box;
-      overflow-y: auto;
-    }
+    #sidebar { position: absolute; left: 0; top: 0; width: 300px; height: 100%; background: #1e1e1e; color: #fff; padding: 10px; box-sizing: border-box; overflow-y: auto; }
     #sidebar h2 { margin-top: 0; font-size: 18px; }
     #sidebar input[type="file"] { width: 100%; margin-bottom: 10px; }
     #sidebar button { width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer; }
@@ -28,28 +17,28 @@
   </style>
 </head>
 <body>
-  <div id="sidebar">
-    <h2>Assets</h2>
-    <div id="asset-list"></div>
-    <input type="file" id="fbxInput" accept=".fbx" multiple>
-    <input type="file" id="textureInput" accept=".png" multiple>
+<div id="sidebar">
+  <h2>Assets</h2>
+  <div id="asset-list"></div>
+  <input type="file" id="fbxInput" accept=".fbx" multiple>
+  <input type="file" id="textureInput" accept=".png" multiple>
 
-    <h2>Scripts</h2>
-    <div id="script-list"></div>
-    <input type="file" id="scriptInput" accept=".js" multiple>
+  <h2>Scripts</h2>
+  <div id="script-list"></div>
+  <input type="file" id="scriptInput" accept=".js" multiple>
 
-    <h2>Errors</h2>
-    <div id="error-list"></div>
+  <h2>Errors</h2>
+  <div id="error-list"></div>
 
-    <h2>Actions</h2>
-    <button id="importPexBtn">Import .PeX</button>
-    <input type="file" id="pexInput" accept=".PeX" style="display:none;">
-    <button id="exportPexBtn">Export .PeX</button>
-  </div>
+  <h2>Actions</h2>
+  <button id="importPexBtn">Import .PeX</button>
+  <input type="file" id="pexInput" accept=".PeX" style="display:none;">
+  <button id="exportPexBtn">Export .PeX</button>
+</div>
 
-  <div id="canvas-container"></div>
+<div id="canvas-container"></div>
 
-  <script type="module">
+<script type="module">
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 import { FBXLoader } from 'https://unpkg.com/three@0.160.0/examples/jsm/loaders/FBXLoader.js?module';
 import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js?module';
@@ -68,7 +57,6 @@ container.appendChild(renderer.domElement);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 
-// Lights
 const light = new THREE.DirectionalLight(0xffffff, 1);
 light.position.set(10, 20, 10);
 scene.add(light);
@@ -77,7 +65,7 @@ scene.add(ambient);
 
 const loader = new FBXLoader();
 const sceneAssets = { models: [], textures: [], scripts: [] };
-const mixers = []; // Store animation mixers
+const mixers = [];
 const clock = new THREE.Clock();
 const errorList = document.getElementById('error-list');
 
@@ -88,7 +76,6 @@ function addListItem(listId, name) {
   item.textContent = name;
   list.appendChild(item);
 }
-
 function addError(msg) {
   const item = document.createElement('div');
   item.textContent = msg;
@@ -96,38 +83,47 @@ function addError(msg) {
   console.error(msg);
 }
 
-// --- Load FBX with animations ---
+// --- Load FBX with auto scale/position ---
 function loadFBX(file) {
   const url = URL.createObjectURL(file);
   loader.load(url,
     (obj) => {
-      // Center & scale the object
+      // Traverse meshes to ensure visibility
+      obj.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      // Compute bounding box and center
       const box = new THREE.Box3().setFromObject(obj);
       const center = box.getCenter(new THREE.Vector3());
-      obj.position.sub(center); // center at 0,0,0
-
       const size = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      if(maxDim > 0) obj.scale.setScalar(2 / maxDim);
+      if (maxDim > 0) obj.scale.setScalar(2 / maxDim);
+      obj.position.sub(center); // center at origin
 
+      // Add object
       scene.add(obj);
       sceneAssets.models.push({ file, obj });
       addListItem('asset-list', file.name);
 
-      // Check for animations
-      if(obj.animations && obj.animations.length > 0) {
-        const mixer = new THREE.AnimationMixer(obj);
-        obj.animations.forEach((clip) => {
-          mixer.clipAction(clip).play();
-        });
-        mixers.push(mixer);
-      }
-
+      // Move camera to frame object
+      const camDist = maxDim * 2;
+      camera.position.set(camDist, camDist, camDist);
       controls.target.set(0, 0, 0);
       controls.update();
+
+      // Handle animations
+      if(obj.animations && obj.animations.length > 0) {
+        const mixer = new THREE.AnimationMixer(obj);
+        obj.animations.forEach(clip => mixer.clipAction(clip).play());
+        mixers.push(mixer);
+      }
     },
     undefined,
-    (err) => addError(`FBX load error (${file.name}): ${err.message || err}`)
+    err => addError(`FBX load error (${file.name}): ${err.message || err}`)
   );
 }
 
@@ -135,21 +131,16 @@ function loadFBX(file) {
 function loadTexture(file) {
   const url = URL.createObjectURL(file);
   const texLoader = new THREE.TextureLoader();
-  texLoader.load(url,
-    (texture) => {
-      const geometry = new THREE.PlaneGeometry(2, 2);
-      const material = new THREE.MeshBasicMaterial({ map: texture });
-      const mesh = new THREE.Mesh(geometry, material);
-      scene.add(mesh);
-      sceneAssets.textures.push({ file, texture, mesh });
-      addListItem('asset-list', file.name);
-
-      controls.target.set(0, 0, 0);
-      controls.update();
-    },
-    undefined,
-    (err) => addError(`Texture load error (${file.name}): ${err.message || err}`)
-  );
+  texLoader.load(url, texture => {
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const material = new THREE.MeshBasicMaterial({ map: texture });
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+    sceneAssets.textures.push({ file, texture, mesh });
+    addListItem('asset-list', file.name);
+    controls.target.set(0,0,0);
+    controls.update();
+  }, undefined, err => addError(`Texture load error (${file.name}): ${err.message || err}`));
 }
 
 // --- Load Script ---
@@ -165,26 +156,20 @@ async function loadScript(file) {
   }
 }
 
-// --- Event Listeners ---
-document.getElementById('fbxInput').addEventListener('change', e => {
-  for(const file of e.target.files) loadFBX(file);
-});
-document.getElementById('textureInput').addEventListener('change', e => {
-  for(const file of e.target.files) loadTexture(file);
-});
-document.getElementById('scriptInput').addEventListener('change', e => {
-  for(const file of e.target.files) loadScript(file);
-});
+// Event listeners
+document.getElementById('fbxInput').addEventListener('change', e => { for(const f of e.target.files) loadFBX(f); });
+document.getElementById('textureInput').addEventListener('change', e => { for(const f of e.target.files) loadTexture(f); });
+document.getElementById('scriptInput').addEventListener('change', e => { for(const f of e.target.files) loadScript(f); });
 
 // Drag & drop
 container.addEventListener('dragover', e => e.preventDefault());
 container.addEventListener('drop', e => {
   e.preventDefault();
-  for(const file of e.dataTransfer.files) {
-    if(file.name.endsWith('.fbx')) loadFBX(file);
-    else if(file.name.endsWith('.png')) loadTexture(file);
-    else if(file.name.endsWith('.js')) loadScript(file);
-    else addError(`Unsupported file type: ${file.name}`);
+  for(const f of e.dataTransfer.files){
+    if(f.name.endsWith('.fbx')) loadFBX(f);
+    else if(f.name.endsWith('.png')) loadTexture(f);
+    else if(f.name.endsWith('.js')) loadScript(f);
+    else addError(`Unsupported file type: ${f.name}`);
   }
 });
 
@@ -196,45 +181,42 @@ pexInput.addEventListener('change', async e => {
   const form = new FormData();
   form.append('pexFile', file);
   try {
-    const resp = await fetch('/api/importPex', { method:'POST', body: form });
+    const resp = await fetch('/api/importPex',{method:'POST',body:form});
     const data = await resp.json();
     if(data.success && data.world) console.log('Imported world:', data.world);
-  } catch(err) { addError(`Failed to import .PeX: ${err.message || err}`); }
+  } catch(err){ addError(`Failed to import .PeX: ${err.message || err}`);}
 });
-
 document.getElementById('exportPexBtn').addEventListener('click', async () => {
   const form = new FormData();
-  form.append('worldFolderPath', '.');
-  form.append('worldName', 'MyWorld');
-  try {
-    const resp = await fetch('/api/exportPex', { method:'POST', body: form });
+  form.append('worldFolderPath','.');
+  form.append('worldName','MyWorld');
+  try{
+    const resp = await fetch('/api/exportPex',{method:'POST',body:form});
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'MyWorld.PeX';
+    a.download='MyWorld.PeX';
     a.click();
-  } catch(err) { addError(`Failed to export .PeX: ${err.message || err}`); }
+  } catch(err){ addError(`Failed to export .PeX: ${err.message || err}`);}
 });
 
 // Render loop
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
-
   const delta = clock.getDelta();
-  mixers.forEach(m => m.update(delta));
-
+  mixers.forEach(m=>m.update(delta));
   controls.update();
-  renderer.render(scene, camera);
+  renderer.render(scene,camera);
 }
 animate();
 
 // Handle resize
-window.addEventListener('resize', () => {
-  camera.aspect = container.clientWidth / container.clientHeight;
+window.addEventListener('resize',()=>{
+  camera.aspect=container.clientWidth/container.clientHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setSize(container.clientWidth,container.clientHeight);
 });
-  </script>
+</script>
 </body>
 </html>
