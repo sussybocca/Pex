@@ -11,7 +11,7 @@
     "three": "^0.160.0",
     "fbx-parser": "^1.0.0",
     "adm-zip": "^0.5.9",
-    "formidable": "^2.2.1"
+    "formidable": "^3.5.4"
   },
   "engines": {
     "node": ">=18"
